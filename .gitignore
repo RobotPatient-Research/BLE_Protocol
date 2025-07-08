@@ -39,3 +39,13 @@
 
 # debug information files
 *.dwo
+
+# Build artifacts folders
+build/
+twister-out*/
+
+# IDE folders
+.vscode/
+
+# Mac Os stuff
+.DS_Store

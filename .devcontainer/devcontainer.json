@@ -1,0 +1,51 @@
+// For format details, see https://aka.ms/vscode-remote/devcontainer.json
+{
+    "name": "vscode-zephyr",
+
+	// build from GitHub container registry package
+	// https://github.com/cooked?tab=packages&repo_name=vscode-zephyr-devcontainer
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+    //"remoteUser": "user", 
+
+    // The optional 'runArgs' property can be used to specify additional runtime arguments.
+    "runArgs": [
+        "-v", "/dev:/dev",  //
+        "--privileged"      // allows access to tty* devices
+    ],
+
+    // make a list of ports inside the container available locally
+	"forwardPorts": [
+	],
+    "workspaceFolder": "/workspaces/BLE_protocol",    
+    // Configure tool-specific properties.
+    // https://code.visualstudio.com/docs/remote/devcontainerjson-reference#_vs-code-specific-properties
+    "customizations": {
+        "vscode": {
+			"settings": {
+				"terminal.integrated.defaultProfile.linux" : "bash",
+				"extensions.ignoreRecommendations": true
+			},
+            "extensions": [
+                // core
+				"ms-vscode.cpptools",      
+                "mylonics.zephyr-ide",
+                "kylemicallefbonnici.dts-lsp",
+				// zephyr
+				// extpack incl: devicetree, kconfig, link map, cmake
+				// NOTE: later versions are broken
+                // debug
+                "mcu-debug.debug-tracker-vscode", // needed by cortex-debug
+                "marus25.cortex-debug",
+                "ms-vscode.vscode-serial-monitor",
+				// editing
+                "stkb.rewrap",
+                "wayou.vscode-todo-highlight",
+                // task utils
+			    "augustocdias.tasks-shell-input" // needed by dynamic task input
+            ]
+        }
+    } 
+
+}

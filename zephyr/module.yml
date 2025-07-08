@@ -1,0 +1,6 @@
+name: manikin_ble_protocol
+build:
+  cmake: .
+  kconfig: Kconfig
+tests:
+  - device/tests      # relative to the module root

@@ -1,0 +1,5 @@
+config MANIKIN_BLE_PROTOCOL
+    bool "Manikin BLE protocol support"
+    depends on BT
+    help
+      Enable driver for the Manikin BLE protocol.

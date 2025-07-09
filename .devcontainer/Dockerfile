@@ -30,5 +30,8 @@ WORKDIR /workspace
 
 RUN sudo chown -R vscode:vscode /opt
 
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 # Default command (for devcontainer)
 CMD ["sleep", "infinity"]

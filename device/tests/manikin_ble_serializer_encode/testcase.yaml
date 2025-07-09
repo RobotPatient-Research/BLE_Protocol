@@ -1,0 +1,5 @@
+tests:
+  manikin_ble_protocol.serializer_encode.runtime:
+    tags: drivers manikin_ble_serializer_encode
+    harness: ztest
+    timeout: 60        # optional but nice

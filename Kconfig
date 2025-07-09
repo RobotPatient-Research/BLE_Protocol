@@ -3,3 +3,37 @@ config MANIKIN_BLE_PROTOCOL
     depends on BT
     help
       Enable driver for the Manikin BLE protocol.
+
+if MANIKIN_BLE_PROTOCOL
+
+config MANIKIN_BLE_MAX_ATT_SIZE
+    int "Max ATT size in (bytes)"
+    default 185
+    range 64 4096
+    help
+      Size of the internal receive buffer used by the Manikin BLE protocol.
+
+config MANIKIN_BLE_MAX_TEMPORARY_BUFFER_SIZE
+    int "Transmit buffer size (bytes)"
+    default 512
+    range 64 4096
+    help
+      Size of the internal transmit buffer used by the Manikin BLE protocol.
+
+config MANIKIN_BLE_MAX_BUFFERS
+    int "Maximum number of internal buffers"
+    default 4
+    range 1 16
+    help
+      Maximum number of internal buffers that can be used simultaneously
+      by the Manikin BLE protocol.
+
+
+config MANIKIN_BLE_MAX_SUBSCRIBERS
+    int "Maximum number of subscribers"
+    default 4
+    range 1 16
+    help
+      Maximum number of subscribers tasks that can access api from the Manikin BLE protocol.
+
+endif # MANIKIN_BLE_PROTOCOL

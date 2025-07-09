@@ -8,7 +8,7 @@ ZTEST(manikin_ble_tests, test_valid_msg_parsing)
 {
     // Message: | 0x01 | 0x02 | 0x3A | 0x02 | 0xAA 0xBB | 0x3B |
     uint8_t buffer[] = {
-        0x01, 0x02, 0x3A, 0x02, 0xAA, 0xBB, 0x3B
+        0x01, 0x02, 0x3A, 0x02, 0xAA, 0xBB, 0x3B, 0xD7, 0x59, 0x17
     };
     manikin_ble_msg_t msg = {0};
     int ret = manikin_ble_decode_msg(buffer, sizeof(buffer), &msg);
@@ -43,7 +43,7 @@ ZTEST(manikin_ble_tests, test_missing_eof_byte)
 ZTEST(manikin_ble_tests, test_shifted_valid_frame)
 {
     uint8_t buffer[] = {
-        0x00, 0x00, 0x01, 0x02, 0x3A, 0x03, 0xDE, 0xAD, 0x3B
+        0x00, 0x00, 0x01, 0x02, 0x3A, 0x03, 0xDE, 0xAD, 0x3B, 0xC4, 0xBB, 0x17
     };
     manikin_ble_msg_t msg = {0};
     int ret = manikin_ble_decode_msg(buffer, sizeof(buffer), &msg);
@@ -73,4 +73,17 @@ ZTEST(manikin_ble_tests, test_invalid_command)
     manikin_ble_msg_t msg = {0};
     int ret = manikin_ble_decode_msg(buffer, sizeof(buffer), &msg);
     zassert_equal(ret, EINVAL, "Invalid command should return EINVAL");
+}
+
+ZTEST(manikin_ble_tests, test_invalid_crc)
+{
+    // Message with incorrect CRC: actual CRC for 0xAA 0xBB is 0x59D7 (little-endian: D7 59)
+    // Here we intentionally corrupt the CRC (e.g., 0x00 0x00 instead of D7 59)
+    uint8_t buffer[] = {
+        0x01, 0x02, 0x3A, 0x02, 0xAA, 0xBB, 0x3B, 0x00, 0x00, 0x17
+    };
+    manikin_ble_msg_t msg = {0};
+    int ret = manikin_ble_decode_msg(buffer, sizeof(buffer), &msg);
+
+    zassert_not_equal(ret, 0, "Invalid CRC should result in error");
 }

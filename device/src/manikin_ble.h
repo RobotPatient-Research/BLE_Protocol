@@ -3,12 +3,27 @@
 
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/kernel.h>
+#include <private/manikin_ble_protocol_definitions.h>
 
 /**
  * @brief Handle structure for the Manikin BLE command parser.
  */
-typedef struct {
-    struct bt_conn *conn;  /**< Pointer to the active BLE connection*/
+typedef struct
+{
+    struct bt_conn *conn; /**< Pointer to the active BLE connection*/
+
+    /* RX ring buffer */
+    struct ring_buf rx_ring;
+    uint8_t rx_ring_buf[MANIKIN_BLE_BUFFER_SPACE];
+    struct k_mutex rx_mutex;
+
+    struct ring_buf tx_ring;
+    uint8_t tx_ring_buf[MANIKIN_BLE_BUFFER_SPACE];
+    struct k_mutex tx_mutex;
+
+    struct k_sem* subscribers[CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS];
+    uint8_t num_of_subscribers;
+
 } manikin_ble_handle_t;
 
 /**
@@ -73,7 +88,7 @@ int manikin_ble_add_consumer(manikin_ble_handle_t *handle, manikin_ble_cmd_t com
  *         -ENOENT if no consumer was registered for the command,
  *         -EINVAL if arguments are invalid.
  */
-int manikin_ble_remove_consumer(manikin_ble_handle_t *handle, ble_cmd_t command);
+int manikin_ble_remove_consumer(manikin_ble_handle_t *handle, manikin_ble_cmd_t command);
 
 /**
  * @brief Process incoming BLE command messages.

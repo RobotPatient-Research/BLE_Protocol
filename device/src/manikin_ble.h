@@ -3,113 +3,99 @@
 
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/kernel.h>
+#include <manikin_ble_serializer.h>
 #include <private/manikin_ble_protocol_definitions.h>
 
 /**
- * @brief Handle structure for the Manikin BLE command parser.
+ * @brief BLE command parser handle.
  */
 typedef struct
 {
-    struct bt_conn *conn; /**< Pointer to the active BLE connection*/
+    struct ring_buf rx_ring;                          /**< RX ring buffer */
+    uint8_t rx_ring_buf[MANIKIN_BLE_BUFFER_SPACE];    /**< RX buffer space */
+    struct k_mutex rx_mutex;                          /**< RX mutex */
 
-    /* RX ring buffer */
-    struct ring_buf rx_ring;
-    uint8_t rx_ring_buf[MANIKIN_BLE_BUFFER_SPACE];
-    struct k_mutex rx_mutex;
+    struct ring_buf tx_ring;                          /**< TX ring buffer */
+    uint8_t tx_ring_buf[MANIKIN_BLE_BUFFER_SPACE];    /**< TX buffer space */
+    struct k_mutex tx_mutex;                          /**< TX mutex */
 
-    struct ring_buf tx_ring;
-    uint8_t tx_ring_buf[MANIKIN_BLE_BUFFER_SPACE];
-    struct k_mutex tx_mutex;
-
-    struct k_sem* subscribers[CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS];
-    uint8_t num_of_subscribers;
-
+    manikin_ble_subscription_t subscriptions[CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS]; /**< Command listeners */
+    uint8_t num_of_subscribers;                       /**< Number of listeners */
+    struct k_mutex subscriber_mutex;                  /**< Subscriber list mutex */
 } manikin_ble_handle_t;
 
 /**
- * @brief Initialize the Manikin BLE command parser.
+ * @brief Initialize the BLE parser.
  *
- * Sets up internal state for BLE command handling. Must be called before
- * using other functions in this module.
- *
- * @param handle Pointer to the BLE handle (must be user-allocated).
- * @return 0 on success, or a negative errno code on failure.
+ * @param handle Pointer to the BLE handle (must be allocated by the user).
+ * @return 0 on success, or negative errno on failure.
  */
 int manikin_ble_init(manikin_ble_handle_t *handle);
 
 /**
- * @brief Send a BLE command or response to the peer device.
+ * @brief Register a listener for a specific command.
  *
- * This function transmits a command or response back to the connected BLE peer.
- * Typically used to reply to incoming requests or to send unsolicited updates.
- *
- * The implementation may use a GATT notification, write, or indication depending
- * on configuration.
- *
- * @param handle Pointer to the BLE session handle.
- * @param command The command ID to send
- * @param data Pointer to payload data to send.
- * @param len Length of payload data in bytes.
- *
- * @return 0 on success,
- *         -ENOTCONN if no BLE connection is active,
- *         -EINVAL if arguments are invalid,
- *         -EIO or other negative errno on transmission failure.
+ * @param handle BLE handle.
+ * @param command Command to listen for.
+ * @param listener_sem Semaphore to signal when command is received.
+ * @return 0 on success, or negative errno on failure.
  */
-int manikin_ble_send_command(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, const uint8_t *data, size_t len);
+int manikin_ble_wait_for_command(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, struct k_sem* listener_sem);
 
 /**
- * @brief Register or replace the FIFO consumer for a specific BLE command.
+ * @brief Send a command to the BLE peer.
  *
- * When the specified BLE command is received, its data will be delivered to
- * the given FIFO. If the command was already registered, the FIFO is replaced.
- *
- * The caller is responsible for ensuring the FIFO remains valid for the duration
- * of the BLE session or until explicitly removed via `manikin_ble_remove_consumer()`.
- *
- * @param handle Pointer to the BLE handle.
- * @param command BLE command to associate with this FIFO.
- * @param fifo Pointer to a Zephyr FIFO structure (must be statically allocated).
- *
- * @return 0 on success,
- *         -EINVAL if arguments are invalid.
+ * @param handle BLE handle.
+ * @param command Command ID to send.
+ * @param data Pointer to payload buffer.
+ * @param len Length of payload in bytes.
+ * @return 0 on success, or negative errno on failure.
  */
-int manikin_ble_add_consumer(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, struct k_fifo *fifo);
+int manikin_ble_send_message(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, const uint8_t *data, size_t len);
 
 /**
- * @brief Remove a previously registered consumer for a BLE command.
+ * @brief Retrieve the next message for a command.
  *
- * After calling this, the command will no longer deliver data to any FIFO.
- *
- * @param handle Pointer to the BLE handle.
- * @param command BLE command to remove.
- *
- * @return 0 on success,
- *         -ENOENT if no consumer was registered for the command,
- *         -EINVAL if arguments are invalid.
+ * @param handle BLE handle.
+ * @param cmd Command to read from buffer.
+ * @param msg Pointer to store received message.
+ * @return 0 on success, -ENODATA if no message available, or -EINVAL on error.
  */
-int manikin_ble_remove_consumer(manikin_ble_handle_t *handle, manikin_ble_cmd_t command);
+int manikin_ble_receive_message(manikin_ble_handle_t *handle, manikin_ble_cmd_t cmd, manikin_ble_msg_t *msg);
 
 /**
- * @brief Process incoming BLE command messages.
+ * @brief Decode and dispatch a raw incoming message.
  *
- * Call this periodically to handle received BLE command data and route it
- * to the appropriate FIFO (if registered).
- *
- * @param handle Pointer to the BLE handle.
- *
- * @return 0 on success, or negative errno on processing error.
+ * @param handle BLE handle.
+ * @param raw_message Pointer to complete raw message (with header).
+ * @return 0 on success, -ENOENT if no subscriber, or -EINVAL on error.
  */
-int manikin_ble_process(manikin_ble_handle_t *handle);
+int manikin_ble_on_ble_message(manikin_ble_handle_t *handle, uint8_t *raw_message);
 
 /**
- * @brief Deinitialize the Manikin BLE command parser.
+ * @brief Process RX and TX queues.
  *
- * Cleans up internal state. Call this when BLE command processing is no longer needed.
+ * @param handle BLE handle.
+ * @return 0 on success, or negative errno on failure.
+ */
+int manikin_ble_poll(manikin_ble_handle_t *handle);
+
+/**
+ * @brief Deinitialize BLE parser.
  *
- * @param handle Pointer to the BLE handle.
+ * @param handle BLE handle.
  * @return 0 on success, or negative errno on failure.
  */
 int manikin_ble_deinit(manikin_ble_handle_t *handle);
+
+/**
+ * @brief Send raw BLE data (must be implemented by user).
+ *
+ * @param handle BLE handle.
+ * @param data Pointer to serialized message.
+ * @param size Size of data in bytes.
+ * @return 0 on success, or negative errno on failure.
+ */
+int manikin_ble_send_ble(manikin_ble_handle_t *handle, const uint8_t *data, const uint8_t size);
 
 #endif /* MANIKIN_BLE_H */

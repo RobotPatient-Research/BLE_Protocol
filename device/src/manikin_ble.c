@@ -1,127 +1,153 @@
+#include "manikin_ble.h"
+#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/printk.h>
 #include <string.h>
-#include <zephyr/kernel.h>
-#include <manikin_ble.h>
-#include <manikin_ble_serializer.h>
 
-typedef struct {
-    manikin_ble_cmd_t cmd;
-    struct k_fifo *fifo;
-} manikin_consumer_entry_t;
-
-static manikin_consumer_entry_t consumers[CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS];
-
-int
-manikin_ble_init(manikin_ble_handle_t *handle)
+static int store_to_ring(struct ring_buf *ring, struct k_mutex *mutex, const uint8_t *data, size_t len)
 {
+    if (!data || len == 0)
+        return -EINVAL;
+
+    k_mutex_lock(mutex, K_FOREVER);
+    uint32_t written = ring_buf_put(ring, data, len);
+    k_mutex_unlock(mutex);
+
+    return (written == len) ? 0 : -ENOSPC;
+}
+
+static int fetch_from_ring(struct ring_buf *ring, struct k_mutex *mutex, uint8_t *out, size_t len)
+{
+    if (!out || len == 0)
+        return -EINVAL;
+
+    k_mutex_lock(mutex, K_FOREVER);
+    uint32_t fetched = ring_buf_get(ring, out, len);
+    k_mutex_unlock(mutex);
+
+    return (fetched == len) ? 0 : -ENODATA;
+}
+
+static int peek_from_ring(struct ring_buf *ring, struct k_mutex *mutex, uint8_t *out, size_t len) {
+
+}
+
+static int ring_is_empty(struct ring_buf *ring, struct k_mutex *mutex) {
+    k_mutex_lock(mutex, K_FOREVER);
+    bool is_empty = ring_buf_is_empty(ring);
+    k_mutex_unlock(mutex);
+    return is_empty;
+}
+
+int manikin_ble_init(manikin_ble_handle_t *handle)
+{
+    if (!handle)
+        return -EINVAL;
+
     ring_buf_init(&handle->rx_ring, sizeof(handle->rx_ring_buf), handle->rx_ring_buf);
     ring_buf_init(&handle->tx_ring, sizeof(handle->tx_ring_buf), handle->tx_ring_buf);
-
     k_mutex_init(&handle->rx_mutex);
     k_mutex_init(&handle->tx_mutex);
+    k_mutex_init(&handle->subscriber_mutex);
 
     handle->num_of_subscribers = 0;
-    memset(handle->subscribers, 0, sizeof(handle->subscribers));
-    memset(consumers, 0, sizeof(consumers));
+    memset(handle->subscriptions, 0, sizeof(handle->subscriptions));
 
     return 0;
 }
 
-int
-manikin_ble_send_command(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, const uint8_t *data, size_t len)
+int manikin_ble_wait_for_command(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, struct k_sem *listener_sem)
 {
-    manikin_ble_msg_t msg = {
-        .cmd = command,
-        .payload_size = len < CONFIG_MANIKIN_BLE_MAX_TEMPORARY_BUFFER_SIZE ? len : CONFIG_MANIKIN_BLE_MAX_TEMPORARY_BUFFER_SIZE,
-    };
-
-    memcpy(msg.payload, data, msg.payload_size);
-
-    uint8_t encoded[CONFIG_MANIKIN_BLE_MAX_TEMPORARY_BUFFER_SIZE + 8];
-    int ret = manikin_ble_encode_msg(sizeof(encoded), &msg, encoded);
-    if (ret <= 0) {
+    if (!handle || !listener_sem)
         return -EINVAL;
-    }
 
-    k_mutex_lock(&handle->tx_mutex, K_FOREVER);
-    size_t written = ring_buf_put(&handle->tx_ring, encoded, ret);
-    k_mutex_unlock(&handle->tx_mutex);
+    k_mutex_lock(&handle->subscriber_mutex, K_FOREVER);
 
-    return (written == ret) ? 0 : -ENOMEM;
-}
-
-int
-manikin_ble_add_consumer(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, struct k_fifo *fifo)
-{
     if (handle->num_of_subscribers >= CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS) {
+        k_mutex_unlock(&handle->subscriber_mutex);
         return -ENOMEM;
     }
 
-    for (int i = 0; i < CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS; i++) {
-        if (consumers[i].fifo == NULL) {
-            consumers[i].cmd = command;
-            consumers[i].fifo = fifo;
-            handle->subscribers[handle->num_of_subscribers++] = NULL;  // optional placeholder
-            return 0;
-        }
-    }
+    handle->subscriptions[handle->num_of_subscribers].command = command;
+    handle->subscriptions[handle->num_of_subscribers].listener_sem = listener_sem;
+    handle->num_of_subscribers++;
 
-    return -ENOMEM;
+    k_mutex_unlock(&handle->subscriber_mutex);
+    return 0;
 }
 
-int
-manikin_ble_remove_consumer(manikin_ble_handle_t *handle, manikin_ble_cmd_t command)
+int manikin_ble_send_message(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, const uint8_t *data, size_t len)
 {
-    for (int i = 0; i < CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS; i++) {
-        if (consumers[i].fifo != NULL && consumers[i].cmd == command) {
-            consumers[i].fifo = NULL;
-            // Optional: compact the list
-            return 0;
-        }
-    }
+    if (!handle || !data || len == 0)
+        return -EINVAL;
 
-    return -ENOENT;
+    uint8_t encoded[CONFIG_MANIKIN_BLE_MAX_ATT_SIZE];
+
+    manikin_ble_msg_t msg = {
+        .cmd = command,
+        .payload_size = len > CONFIG_MANIKIN_BLE_MAX_ATT_SIZE ? CONFIG_MANIKIN_BLE_MAX_ATT_SIZE : len
+    };
+    memcpy(msg.payload, data, msg.payload_size);
+
+    int encoded_len = manikin_ble_encode_msg(sizeof(encoded), &msg, encoded);
+    if (encoded_len < 0)
+        return -EIO;
+
+    return manikin_ble_send_ble(handle, encoded, encoded_len);
 }
 
-int
-manikin_ble_process(manikin_ble_handle_t *handle)
+int manikin_ble_receive_message(manikin_ble_handle_t *handle, manikin_ble_cmd_t cmd, manikin_ble_msg_t *msg)
 {
-    uint8_t temp[CONFIG_MANIKIN_BLE_MAX_TEMPORARY_BUFFER_SIZE + 8];
-    int len;
+    if (!handle || !msg)
+        return -EINVAL;
 
-    k_mutex_lock(&handle->rx_mutex, K_FOREVER);
-    len = ring_buf_get(&handle->rx_ring, temp, sizeof(temp));
-    k_mutex_unlock(&handle->rx_mutex);
 
-    if (len <= 0) {
-        return 0;
-    }
+
+    return -ENODATA;
+}
+
+int manikin_ble_on_ble_message(manikin_ble_handle_t *handle, uint8_t *raw_message)
+{
+    if (!handle || !raw_message)
+        return -EINVAL;
 
     manikin_ble_msg_t decoded;
-    int ret = manikin_ble_decode_msg(temp, len, &decoded);
-    if (ret < 0) {
+    int decode_res = manikin_ble_decode_msg(raw_message, CONFIG_MANIKIN_BLE_MAX_ATT_SIZE, &decoded);
+    if (decode_res != 0)
         return -EINVAL;
-    }
 
-    // Route to matching consumer
-    for (int i = 0; i < CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS; i++) {
-        if (consumers[i].fifo && consumers[i].cmd == decoded.cmd) {
-            manikin_ble_msg_t *msg = k_malloc(sizeof(manikin_ble_msg_t));
-            if (!msg) {
-                return -ENOMEM;
-            }
-            memcpy(msg, &decoded, sizeof(manikin_ble_msg_t));
-            k_fifo_put(consumers[i].fifo, msg);
-            return 0;
-        }
-    }
+    if (store_to_ring(&handle->rx_ring, &handle->rx_mutex, (uint8_t *)&decoded, sizeof(decoded)) != 0)
+        return -ENOSPC;
 
-    return -ENOSYS;  // No handler found
+    return 0;
 }
 
-int
-manikin_ble_deinit(manikin_ble_handle_t *handle)
+int manikin_ble_poll(manikin_ble_handle_t *handle)
 {
-    // Optional cleanup
-    memset(handle, 0, sizeof(*handle));
+    if (!handle)
+        return -EINVAL;
+
+    
+    // Currently no background processing needed.
+
+    // k_mutex_lock(&handle->subscriber_mutex, K_FOREVER);
+    // for (int i = 0; i < handle->num_of_subscribers; ++i) {
+    //     if (handle->subscriptions[i].command == decoded.cmd) {
+    //         k_sem_give(handle->subscriptions[i].listener_sem);
+    //     }
+    // }
+    // k_mutex_unlock(&handle->subscriber_mutex);
+
+    return 0;
+}
+
+int manikin_ble_deinit(manikin_ble_handle_t *handle)
+{
+    if (!handle)
+        return -EINVAL;
+
+    k_mutex_lock(&handle->subscriber_mutex, K_FOREVER);
+    handle->num_of_subscribers = 0;
+    k_mutex_unlock(&handle->subscriber_mutex);
+
     return 0;
 }

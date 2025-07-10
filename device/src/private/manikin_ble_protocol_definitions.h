@@ -31,11 +31,17 @@
 
 typedef enum
 {
+    MANIKIN_BLE_IS_RESP      = 1U,
     MANIKIN_BLE_CMD_START    = 2U,
-    MANIKIN_BLE_CMD_STOP     = 3U,
-    MANIKIN_BLE_CMD_DATA     = 4U,
-    MANIKIN_BLE_CMD_TIMEDATA = 5U,
-    MANIKIN_BLE_CMD_INVALID  = 6U
+    MANIKIN_BLE_CMD_STOP     = 4U,
+    MANIKIN_BLE_CMD_DATA     = 8U,
+    MANIKIN_BLE_CMD_TIMEDATA = 16U,
+    MANIKIN_BLE_CMD_INVALID  = 32U
 } manikin_ble_cmd_t;
+
+typedef struct {
+    manikin_ble_cmd_t command;
+    struct k_sem* listener_sem;
+} manikin_ble_subscription_t;
 
 #endif /* BLE_GATT_PROTOCOL_DEFINITIONS */

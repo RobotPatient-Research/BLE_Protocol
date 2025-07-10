@@ -7,7 +7,7 @@
 typedef struct
 {
     manikin_ble_cmd_t cmd;
-    uint8_t           payload[CONFIG_MANIKIN_BLE_MAX_TEMPORARY_BUFFER_SIZE];
+    uint8_t           payload[CONFIG_MANIKIN_BLE_MAX_ATT_SIZE];
     uint8_t           payload_size;
 } manikin_ble_msg_t;
 

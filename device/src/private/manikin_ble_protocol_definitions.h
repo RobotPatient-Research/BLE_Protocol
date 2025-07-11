@@ -1,6 +1,8 @@
 #ifndef MANIKIN_BLE_PROTOCOL_DEFINITIONS
 #define MANIKIN_BLE_PROTOCOL_DEFINITIONS
 
+#include <zephyr/kernel.h>
+
 #define MANIKIN_BLE_CRC_SEED 0x0000U
 
 /*
@@ -32,16 +34,17 @@
 typedef enum
 {
     MANIKIN_BLE_IS_RESP      = 1U,
-    MANIKIN_BLE_CMD_START    = 2U,
-    MANIKIN_BLE_CMD_STOP     = 4U,
-    MANIKIN_BLE_CMD_DATA     = 8U,
-    MANIKIN_BLE_CMD_TIMEDATA = 16U,
-    MANIKIN_BLE_CMD_INVALID  = 32U
+    MANIKIN_BLE_CMD_ANY      = 2U,
+    MANIKIN_BLE_CMD_START    = 4U,
+    MANIKIN_BLE_CMD_STOP     = 8U,
+    MANIKIN_BLE_CMD_DATA     = 16U,
+    MANIKIN_BLE_CMD_TIMEDATA = 32U,
+    MANIKIN_BLE_CMD_INVALID  = 64U
 } manikin_ble_cmd_t;
 
 typedef struct {
     manikin_ble_cmd_t command;
-    struct k_sem* listener_sem;
+    struct k_sem sem;
 } manikin_ble_subscription_t;
 
 #endif /* BLE_GATT_PROTOCOL_DEFINITIONS */

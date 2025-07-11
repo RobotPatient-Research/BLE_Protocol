@@ -22,7 +22,7 @@ decode_msg_from_buffer (const uint8_t *in_buff, const size_t len, manikin_ble_ms
         return 1;
     }
 
-    size_t msg_len = in_buff[MANIKIN_BLE_LENGTH_BYTE_POS];
+    size_t msg_len = in_buff[MANIKIN_BLE_LENGTH_BYTE_POS]-1;
     if (msg_len > 0)
     {
         /* Copy payload from message to the output-buffer */
@@ -46,7 +46,7 @@ static inline int
 packet_is_invalid (const uint8_t *in_buff, size_t len)
 {
     uint8_t  length  = in_buff[MANIKIN_BLE_LENGTH_BYTE_POS];
-    uint16_t eof_pos = MANIKIN_BLE_EOF_MSG_POS(length);
+    uint16_t eof_pos = MANIKIN_BLE_EOF_MSG_POS(length-1);
     if (eof_pos > len)
     {
         return 1;
@@ -105,7 +105,7 @@ manikin_ble_decode_msg (const uint8_t *in_buff, const size_t len, manikin_ble_ms
 
     /* Check if length of payload is larger than provided packet */
     uint8_t length = in_buff[offset + MANIKIN_BLE_LENGTH_BYTE_POS];
-    if (length < 0 || length >= MANIKIN_BLE_EOF_MSG_POS(length))
+    if (length < 0 || length >= MANIKIN_BLE_EOF_MSG_POS(length-1))
     {
         return EINVAL;
     }
@@ -137,7 +137,7 @@ manikin_ble_encode_msg (const size_t max_len, const manikin_ble_msg_t *in_buff, 
 
     /* Construct packet header */
     out_buff[MANIKIN_BLE_START_BYTE_POS]                       = MANIKIN_BLE_PACKET_START_BYTE;
-    out_buff[MANIKIN_BLE_LENGTH_BYTE_POS]                      = in_buff->payload_size;
+    out_buff[MANIKIN_BLE_LENGTH_BYTE_POS]                      = in_buff->payload_size+1; /* +1 for command byte */
     out_buff[MANIKIN_BLE_SOF_MSG_POS]                          = MANIKIN_BLE_PACKET_SOF_MSG;
     out_buff[MANIKIN_BLE_CMD_POS]                              = in_buff->cmd;
     out_buff[MANIKIN_BLE_EOF_MSG_POS(in_buff->payload_size)]   = MANIKIN_BLE_PACKET_EOF_MSG;

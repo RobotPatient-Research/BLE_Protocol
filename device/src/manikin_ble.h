@@ -22,6 +22,7 @@ typedef struct
     manikin_ble_subscription_t subscriptions[CONFIG_MANIKIN_BLE_MAX_SUBSCRIBERS]; /**< Command listeners */
     uint8_t num_of_subscribers;                       /**< Number of listeners */
     struct k_mutex subscriber_mutex;                  /**< Subscriber list mutex */
+    manikin_ble_cmd_t latest_ack_cmd;
 } manikin_ble_handle_t;
 
 /**
@@ -37,10 +38,9 @@ int manikin_ble_init(manikin_ble_handle_t *handle);
  *
  * @param handle BLE handle.
  * @param command Command to listen for.
- * @param listener_sem Semaphore to signal when command is received.
  * @return 0 on success, or negative errno on failure.
  */
-int manikin_ble_wait_for_command(manikin_ble_handle_t *handle, manikin_ble_cmd_t command, struct k_sem* listener_sem);
+int manikin_ble_wait_for_command(manikin_ble_handle_t *handle, manikin_ble_cmd_t command);
 
 /**
  * @brief Send a command to the BLE peer.
